@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Zoomiverse — Explore NASA Images</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/2.4.2/openseadragon.min.js"></script>
+  <style>
+    :root{--bg:#0b0b10;--panel:#0f1720;--accent:#3daee9;--muted:#9aa6b2}
+    body{margin:0;font-family:Inter,Arial;background:var(--bg);color:#fff}
+    header{padding:12px 16px;display:flex;align-items:center;gap:12px;background:#061225}
+    header h1{font-size:18px;margin:0}
+    #app{display:grid;grid-template-columns:260px 1fr 320px;gap:8px;height:calc(100vh - 56px);padding:8px}
+    .panel{background:var(--panel);padding:10px;border-radius:8px;overflow:auto}
+    .left{display:flex;flex-direction:column;gap:8px}
+    .img-item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;cursor:pointer}
+    .img-item:hover{background:#0b2636}
+    .viewer-wrap{border-radius:8px;overflow:hidden;position:relative}
+    #viewer{width:100%;height:100%}
+    .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    button{background:#081826;border:1px solid rgba(255,255,255,0.06);color:#fff;padding:8px 10px;border-radius:6px;cursor:pointer}
+    button.outline{background:transparent;border:1px solid rgba(255,255,255,0.08)}
+    .right{display:flex;flex-direction:column;gap:8px}
+    .annotations-list{max-height:60vh;overflow:auto}
+    .anno-row{padding:8px;border-radius:6px;margin-bottom:6px;background:#071722}
+    label{display:block;font-size:12px;color:var(--muted);margin-top:6px}
+    input[type="text"], textarea{width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.05);background:#071722;color:#fff}
+    .small{font-size:12px;color:var(--muted)}
+    footer{padding:8px;text-align:center;color:var(--muted);font-size:12px}
+    @media (max-width:900px){#app{grid-template-columns:1fr;grid-auto-rows:600px}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Zoomiverse — Explore NASA Images</h1>
+    <div class="small">Prototype: zoom • annotate • export</div>
+  </header>
+
+  <div id="app">
+    <!-- LEFT: Image library -->
+    <div class="panel left">
+      <div class="toolbar">
+        <button id="btnAddPin">Add Pin</button>
+        <button id="btnExport" class="outline">Export</button>
+        <button id="btnImport" class="outline">Import</button>
+        <input id="importFile" type="file" style="display:none" accept=".json" />
+      </div>
+
+      <div>
+        <strong class="small">Sample image library</strong>
+        <div id="imagelist" style="margin-top:8px"></div>
+        <label class="small">Tip: Use mouse wheel / pinch to zoom</label>
+      </div>
+      <hr style="border:none;height:1px;background:#02161f;margin:10px 0">
+      <div>
+        <strong class="small">How it works</strong>
+        <div class="small" style="margin-top:6px">
+          Click "Add Pin", then click anywhere on the image to drop a pin. Pins are saved locally. Use Export to save JSON.
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: Viewer -->
+    <div class="panel viewer-wrap">
+      <div id="viewer" style="height:100%"></div>
+    </div>
+
+    <!-- RIGHT: Annotations -->
+    <div class="panel right">
+      <div>
+        <strong class="small">Annotations</strong>
+        <div id="annotations" class="annotations-list" style="margin-top:8px"></div>
+      </div>
+      <hr style="border:none;height:1px;background:#02161f;margin:8px 0">
+      <div>
+        <strong class="small">Image info</strong>
+        <div id="imgMeta" class="small" style="margin-top:6px"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Prototype for NASA Space Apps "Embiggen Your Eyes!" — Zoomiverse</footer>
+
+<script>
+/* ---------- sample images list (replace urls with NASA Image API results if desired) ---------- */
+const sampleImages = [
+  {
+    id: 'andromeda',
+    title: 'Andromeda (Hubble)',
+    url: 'https://images-assets.nasa.gov/image/PIA12235/PIA12235~orig.jpg',
+    desc: 'Hubble deep field example (demo image)'
+  },
+  {
+    id: 'mars',
+    title: 'Mars high-res (demo)',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Mars_MGS_colorized.jpg',
+    desc: 'Mars colorized mosaic (demo)'
+  },
+  {
+    id: 'earth-night',
+    title: 'Earth Night Lights (demo)',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/7/7f/2012_City_Lights.jpg',
+    desc: 'Night lights example (demo)'
+  }
+];
+
+/* ---------- globals ---------- */
+let viewer;
+let currentImage = sampleImages[0];
+let addingPin = false;
+const ANNO_KEY_PREFIX = 'zoomiverse_annos_';
+
+/* ---------- initialize UI ---------- */
+function initImagelist(){
+  const list = document.getElementById('imagelist');
+  sampleImages.forEach(img=>{
+    const div = document.createElement('div');
+    div.className = 'img-item';
+    div.innerHTML = `<div style="flex:1"><strong>${img.title}</strong><div class="small">${img.desc}</div></div>`;
+    div.onclick = ()=> loadImage(img);
+    list.appendChild(div);
+  });
+}
+
+/* ---------- viewer setup ---------- */
+function initViewer(){
+  viewer = OpenSeadragon({
+    id: "viewer",
+    prefixUrl: "https://openseadragon.github.io/openseadragon/images/",
+    showNavigator: true,
+    gestureSettingsMouse: { clickToZoom: false }, // we'll use custom clicks
+    defaultZoomLevel: 0,
+    sequenceMode: false
+  });
+
+  loadImage(currentImage);
+
+  // register click handler for adding pins
+  viewer.addHandler('canvas-click', function(ev){
+    if(!addingPin) return;
+    addingPin=false;
+    document.getElementById('btnAddPin').innerText = 'Add Pin';
+    // translate viewport coords to image coordinates
+    const webPoint = ev.position;
+    const viewportPoint = viewer.viewport.pointFromPixel(webPoint);
+    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+    const imgCoord = { x: imagePoint.x, y: imagePoint.y };
+    promptAnnotation(imgCoord);
+  });
+}
+
+/* ---------- load image into viewer ---------- */
+function loadImage(img){
+  currentImage = img;
+  document.getElementById('imgMeta').innerHTML = `<div><strong>${img.title}</strong></div><div class="small">${img.desc}</div>`;
+  // OpenSeadragon supports tile sources and direct images; for the demo we'll load the direct image as a tile source
+  viewer.open({
+    type: 'image',
+    url: img.url,
+    buildPyramid: false
+  });
+  // clear overlays & render existing pins for that image
+  viewer.addOnceHandler('open', ()=> {
+    renderAllAnnotations();
+  });
+}
+
+/* ---------- annotation storage (localStorage per-image) ---------- */
+function annKey(){
+  return ANNO_KEY_PREFIX + currentImage.id;
+}
+function loadAnnotations(){
+  const raw = localStorage.getItem(annKey());
+  return raw ? JSON.parse(raw) : [];
+}
+function saveAnnotations(list){
+  localStorage.setItem(annKey(), JSON.stringify(list));
+}
+
+/* ---------- UI for adding annotation ---------- */
+function promptAnnotation(coord){
+  const title = prompt('Annotation title (short):');
+  if(!title) return;
+  const note = prompt('Short note (optional):') || '';
+  const ann = {
+    id: 'a_'+Date.now(),
+    title,
+    note,
+    x: coord.x,
+    y: coord.y,
+    created: new Date().toISOString()
+  };
+  const arr = loadAnnotations();
+  arr.push(ann);
+  saveAnnotations(arr);
+  renderAllAnnotations();
+}
+
+/* ---------- overlay handling ---------- */
+function clearOverlays(){
+  // remove overlays by class
+  const overlays = document.querySelectorAll('.pin-overlay');
+  overlays.forEach(n=> n.remove());
+}
+function renderAllAnnotations(){
+  clearOverlays();
+  const arr = loadAnnotations();
+  const list = document.getElementById('annotations');
+  list.innerHTML = '';
+  if(!arr.length){ list.innerHTML = '<div class="small">No annotations yet for this image.</div>'; return; }
+  arr.forEach(ann=>{
+    // create overlay
+    const imgPoint = new OpenSeadragon.Point(ann.x, ann.y);
+    const viewportPoint = viewer.viewport.imageToViewportCoordinates(imgPoint);
+    const elt = document.createElement('div');
+    elt.className = 'pin-overlay';
+    elt.style.width = '18px';
+    elt.style.height = '18px';
+    elt.style.background = 'radial-gradient(circle at 30% 30%, #fff, #f0f9ff)';
+    elt.style.border = '2px solid #1b6f97';
+    elt.style.borderRadius = '50%';
+    elt.style.boxShadow = '0 0 8px rgba(0,0,0,0.6)';
+    elt.title = ann.title + (ann.note? (' — '+ann.note):'');
+    // when clicked, open a popup (simple alert here) or jump there
+    elt.onclick = (e)=>{
+      e.stopPropagation();
+      viewer.viewport.panTo(viewportPoint);
+      viewer.viewport.zoomTo( viewer.viewport.getZoom(true) * 2 );
+      alert(ann.title + '\n\n' + ann.note);
+    };
+    // add overlay to viewer (overlay coords in viewport coords)
+    viewer.addOverlay({
+      element: elt,
+      location: viewportPoint,
+      placement: OpenSeadragon.Placement.CENTER
+    });
+
+    // add list row
+    const row = document.createElement('div');
+    row.className = 'anno-row';
+    row.innerHTML = `<strong>${ann.title}</strong><div class="small">${ann.note}</div><div class="small" style="margin-top:6px">x:${ann.x.toFixed(1)} y:${ann.y.toFixed(1)} • ${new Date(ann.created).toLocaleString()}</div>
+      <div style="margin-top:6px"><button class="outline" onclick="jumpToAnno('${ann.id}')">Jump</button> <button onclick="deleteAnno('${ann.id}')">Delete</button></div>`;
+    list.appendChild(row);
+  });
+}
+
+/* ---------- annotation helpers ---------- */
+function jumpToAnno(id){
+  const arr = loadAnnotations();
+  const ann = arr.find(a=>a.id===id);
+  if(!ann) return alert('Annotation not found');
+  const imgPoint = new OpenSeadragon.Point(ann.x, ann.y);
+  const viewportPoint = viewer.viewport.imageToViewportCoordinates(imgPoint);
+  viewer.viewport.panTo(viewportPoint);
+  viewer.viewport.zoomTo( viewer.viewport.getZoom(true) * 2 );
+}
+function deleteAnno(id){
+  if(!confirm('Delete annotation?')) return;
+  let arr = loadAnnotations();
+  arr = arr.filter(a=>a.id!==id);
+  saveAnnotations(arr);
+  renderAllAnnotations();
+}
+
+/* ---------- export & import ---------- */
+function exportAnnotations(){
+  const arr = loadAnnotations();
+  const blob = new Blob([JSON.stringify({imageId: currentImage.id, imageTitle: currentImage.title, annotations: arr}, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${currentImage.id}_annotations.json`; a.click();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+function importAnnotationsFile(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const obj = JSON.parse(e.target.result);
+      if(obj.imageId && obj.annotations){
+        // if image id matches current image, replace; otherwise prompt to merge
+        if(obj.imageId === currentImage.id){
+          saveAnnotations(obj.annotations);
+          renderAllAnnotations();
+          alert('Annotations imported for this image.');
+        } else {
+          if(confirm('Imported annotations are for "'+obj.imageTitle+'" (image id:'+obj.imageId+'). Do you want to save them under the current image?')){
+            // remap image id by saving under current image
+            saveAnnotations(obj.annotations);
+            renderAllAnnotations();
+            alert('Annotations imported and saved to current image.');
+          }
+        }
+      } else {
+        alert('Invalid json file.');
+      }
+    }catch(err){ alert('Error parsing file: ' + err); }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- UI wiring ---------- */
+document.addEventListener('DOMContentLoaded', ()=>{
+  initImagelist();
+  initViewer();
+
+  document.getElementById('btnAddPin').addEventListener('click', ()=>{
+    addingPin = !addingPin;
+    document.getElementById('btnAddPin').innerText = addingPin ? 'Click image to pin...' : 'Add Pin';
+  });
+  document.getElementById('btnExport').addEventListener('click', exportAnnotations);
+  document.getElementById('btnImport').addEventListener('click', ()=> document.getElementById('importFile').click());
+  document.getElementById('importFile').addEventListener('change', (ev)=> {
+    const f = ev.target.files[0];
+    if(f) importAnnotationsFile(f);
+    ev.target.value = '';
+  });
+});
+</script>
+</body>
+</html>

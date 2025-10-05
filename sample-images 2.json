@@ -1,0 +1,26 @@
+[
+  {
+    "id": "iceberg",
+    "title": "A Giant Iceberg's Final Drift",
+    "url": "https://earthobservatory.nasa.gov/images/147478/a-giant-icebergs-final-drift",
+    "desc": "Antarctic Iceberg A-23A floating in the South Atlantic."
+  },
+  {
+    "id": "super-typhoon",
+    "title": "Super Typhoon Ragasa",
+    "url": "https://modis.gsfc.nasa.gov/gallery/2019/images/2019_09_25_ragasa.jpg",
+    "desc": "MODIS satellite image of Super Typhoon Ragasa approaching China."
+  },
+  {
+    "id": "leda-galaxy",
+    "title": "LEDA 2046648 Galaxy (James Webb)",
+    "url": "https://science.nasa.gov/sites/default/files/thumbnails/image/led2046648_jwst.jpg",
+    "desc": "James Webb Space Telescope image of the spiral galaxy LEDA 2046648."
+  },
+  {
+    "id": "airshow",
+    "title": "Airplane Aerobatics",
+    "url": "https://www.nasa.gov/sites/default/files/thumbnails/image/2025_09_12_nasa_hague_air_show.jpg",
+    "desc": "Astronaut Nick Hague observes aerobatic maneuvers at an airshow."
+  }
+]
